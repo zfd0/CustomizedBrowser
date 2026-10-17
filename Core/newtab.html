@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新标签页</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 40px 20px;
+        }
+
+        .search-box {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 30px;
+            padding: 15px 25px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .search-box:focus-within {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.25);
+        }
+
+        .search-box svg {
+            width: 24px;
+            height: 24px;
+            color: #666;
+            margin-right: 15px;
+        }
+
+        .search-box input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 18px;
+            color: #333;
+            background: transparent;
+        }
+
+        .search-box input::placeholder {
+            color: #999;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo h1 {
+            font-size: 48px;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+
+        .logo span {
+            color: #ffd93d;
+        }
+
+        .shortcuts {
+            margin-top: 50px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .shortcut {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+            text-decoration: none;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .shortcut:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-3px);
+        }
+
+        .shortcut-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .shortcut-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .time {
+            margin-bottom: 30px;
+            font-size: 24px;
+            opacity: 0.9;
+        }
+
+        .date {
+            font-size: 16px;
+            opacity: 0.7;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="time" id="time">--:--</div>
+        <div class="date" id="date">加载中...</div>
+        
+        <div class="logo">
+            <h1>Customized<span>Browser</span></h1>
+        </div>
+        
+        <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" id="searchInput" placeholder="搜索或输入网址" autofocus>
+        </div>
+
+        <div class="shortcuts">
+            <a href="https://www.google.com" class="shortcut">
+                <div class="shortcut-icon">G</div>
+                <span class="shortcut-label">Google</span>
+            </a>
+            <a href="https://www.bing.com" class="shortcut">
+                <div class="shortcut-icon">B</div>
+                <span class="shortcut-label">Bing</span>
+            </a>
+            <a href="https://www.github.com" class="shortcut">
+                <div class="shortcut-icon">GH</div>
+                <span class="shortcut-label">GitHub</span>
+            </a>
+            <a href="https://www.youtube.com" class="shortcut">
+                <div class="shortcut-icon">YT</div>
+                <span class="shortcut-label">YouTube</span>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // 更新时间和日期
+        function updateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('time').textContent = `${hours}:${minutes}`;
+            
+            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            const day = now.getDate();
+            const weekday = weekdays[now.getDay()];
+            document.getElementById('date').textContent = `${year}年${month}月${day}日 ${weekday}`;
+        }
+
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        // 搜索框回车事件
+        const searchInput = document.getElementById('searchInput');
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const query = searchInput.value.trim();
+                if (query) {
+                    // 如果是URL则直接跳转，否则搜索
+                    if (isUrl(query)) {
+                        const url = query.startsWith('http') ? query : 'https://' + query;
+                        window.location.href = url;
+                    } else {
+                        window.location.href = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+                    }
+                }
+            }
+        });
+
+        // 判断是否为URL
+        function isUrl(str) {
+            if (str.startsWith('http://') || str.startsWith('https://')) {
+                return true;
+            }
+            if (str.startsWith('localhost')) {
+                return true;
+            }
+            if (str.includes('.') && !str.includes(' ')) {
+                return true;
+            }
+            return false;
+        }
+    </script>
+</body>
+</html>

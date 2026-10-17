@@ -1,0 +1,101 @@
+<Window x:Class="CustomizedBrowser.Views.InstanceManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Title="实例管理"
+        Height="600"
+        Width="900"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource MaterialDesignPaper}"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        TextElement.FontWeight="Regular"
+        TextElement.FontSize="13"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        FontFamily="{DynamicResource MaterialDesignFont}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 工具栏 -->
+        <ToolBar Grid.Row="0" Style="{StaticResource MaterialDesignToolBar}">
+            <Button Command="{Binding CreateNewInstanceCommand}" ToolTip="新建实例">
+                <materialDesign:PackIcon Kind="Plus" Width="20" Height="20"/>
+            </Button>
+            <Button Command="{Binding OpenInstanceCommand}" ToolTip="打开实例">
+                <materialDesign:PackIcon Kind="Play" Width="20" Height="20"/>
+            </Button>
+            <Button Command="{Binding StopInstanceCommand}" ToolTip="停止实例">
+                <materialDesign:PackIcon Kind="Stop" Width="20" Height="20"/>
+            </Button>
+            <Separator/>
+            <Button Command="{Binding DeleteInstanceCommand}" ToolTip="删除实例">
+                <materialDesign:PackIcon Kind="Delete" Width="20" Height="20"/>
+            </Button>
+            <Separator/>
+            <Button Command="{Binding ExportInstanceCommand}" ToolTip="导出实例（含登录状态）">
+                <materialDesign:PackIcon Kind="Export" Width="20" Height="20"/>
+            </Button>
+            <Button Command="{Binding ImportInstanceCommand}" ToolTip="导入实例（含登录状态）">
+                <materialDesign:PackIcon Kind="Import" Width="20" Height="20"/>
+            </Button>
+            <Separator/>
+            <Button Name="ExtractSiteButton" ToolTip="提取网站到新实例" Click="ExtractSiteButton_Click">
+                <materialDesign:PackIcon Kind="ContentCopy" Width="20" Height="20"/>
+            </Button>
+            <Button Name="MergeInstancesButton" ToolTip="合并实例（相同网站可自行选择保留哪个）" Click="MergeInstancesButton_Click">
+                <materialDesign:PackIcon Kind="CallMerge" Width="20" Height="20"/>
+            </Button>
+            <Separator/>
+            <Button Name="SettingsButton" ToolTip="设置" Click="SettingsButton_Click">
+                <materialDesign:PackIcon Kind="Settings" Width="20" Height="20"/>
+            </Button>
+        </ToolBar>
+
+        <!-- 实例列表（支持鼠标框选与右键菜单） -->
+        <Grid Grid.Row="1" ClipToBounds="True">
+            <ListView x:Name="InstancesListView"
+                      ItemsSource="{Binding Instances}"
+                      SelectedItem="{Binding SelectedInstance}"
+                      SelectionMode="Extended"
+                      SelectionChanged="InstancesListView_SelectionChanged"
+                      MouseDoubleClick="InstancesListView_MouseDoubleClick">
+                <!-- 右键菜单：操作作用于当前选中的实例（支持多选批量执行） -->
+                <ListView.ContextMenu>
+                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="打开实例" Command="{Binding OpenInstanceCommand}"/>
+                        <MenuItem Header="停止实例" Command="{Binding StopInstanceCommand}"/>
+                        <MenuItem Header="删除实例" Command="{Binding DeleteInstanceCommand}"/>
+                        <Separator/>
+                        <MenuItem Header="导出实例（含登录状态）" Command="{Binding ExportInstanceCommand}"/>
+                        <MenuItem Header="导入实例（含登录状态）" Command="{Binding ImportInstanceCommand}"/>
+                        <Separator/>
+                        <MenuItem Header="提取网站到新实例" Click="ExtractSiteButton_Click"/>
+                        <MenuItem Header="合并实例" Click="MergeInstancesButton_Click"/>
+                    </ContextMenu>
+                </ListView.ContextMenu>
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="实例名称" DisplayMemberBinding="{Binding Name}" Width="150"/>
+                        <GridViewColumn Header="备注" DisplayMemberBinding="{Binding Note}" Width="200"/>
+                        <GridViewColumn Header="最后使用" DisplayMemberBinding="{Binding LastUsedTime, StringFormat='yyyy-MM-dd HH:mm'}" Width="150"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <!-- 框选矩形：不参与命中测试，避免遮挡列表本身的交互 -->
+            <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False" ClipToBounds="True">
+                <Rectangle x:Name="SelectionRectangle"
+                           Visibility="Collapsed"
+                           Fill="#220078D4"
+                           Stroke="#0078D4"
+                           StrokeThickness="1"/>
+            </Canvas>
+        </Grid>
+    </Grid>
+</Window>

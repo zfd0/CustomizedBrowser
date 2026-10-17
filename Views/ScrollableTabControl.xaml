@@ -1,0 +1,90 @@
+<!-- CustomizedBrowser\Views\ScrollableTabControl.xaml -->
+<UserControl x:Class="CustomizedBrowser.Views.ScrollableTabControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <!-- 标签项样式 -->
+        <Style x:Key="TabItemBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#FFCCCCCC"/>
+            <Setter Property="BorderThickness" Value="1,0,1,0"/>
+            <Setter Property="CornerRadius" Value="4,4,0,0"/>
+            <Setter Property="Padding" Value="12,4,4,4"/>
+            <Setter Property="Margin" Value="2,0,0,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FFE0E0E0"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- 选中标签项样式 -->
+        <Style x:Key="SelectedTabItemBorderStyle" TargetType="Border" BasedOn="{StaticResource TabItemBorderStyle}">
+            <Setter Property="Background" Value="#FFFFFFFF"/>
+            <Setter Property="BorderThickness" Value="1,2,1,0"/>
+            <Setter Property="BorderBrush" Value="#FF1976D2"/>
+        </Style>
+    </UserControl.Resources>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- 标签页头部区域 -->
+        <Grid Grid.Row="0" x:Name="HeaderArea" Height="36" Background="#FFF5F5F5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- 左滚动按钮 -->
+            <Button x:Name="LeftScrollButton"
+                    Grid.Column="0"
+                    Width="28"
+                    Height="36"
+                    Click="LeftScrollButton_Click"
+                    ToolTip="向左滚动"
+                    Visibility="Collapsed">
+                <TextBlock Text="◀" FontSize="10" Foreground="#FF333333" 
+                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Button>
+            
+            <!-- 标签页ScrollViewer -->
+            <ScrollViewer x:Name="TabScrollViewer"
+                          Grid.Column="1"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          CanContentScroll="False"
+                          PreviewMouseWheel="TabScrollViewer_PreviewMouseWheel"
+                          VerticalAlignment="Center">
+                <StackPanel x:Name="TabPanel"
+                            Orientation="Horizontal"
+                            Background="Transparent"
+                            VerticalAlignment="Center"
+                            Margin="2,0"/>
+            </ScrollViewer>
+            
+            <!-- 右滚动按钮 -->
+            <Button x:Name="RightScrollButton"
+                    Grid.Column="2"
+                    Width="28"
+                    Height="36"
+                    Click="RightScrollButton_Click"
+                    ToolTip="向右滚动"
+                    Visibility="Collapsed">
+                <TextBlock Text="▶" FontSize="10" Foreground="#FF333333" 
+                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Button>
+        </Grid>
+        
+        <!-- 内容区域 -->
+        <ContentPresenter Grid.Row="1" x:Name="ContentPresenter"/>
+    </Grid>
+</UserControl>

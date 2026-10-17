@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>CustomizedBrowser</AssemblyName>
+    <RootNamespace>CustomizedBrowser</RootNamespace>
+    <Version>2.0.0</Version>
+    <Authors>CustomizedBrowser Team</Authors>
+    <Description>多实例隔离的现代化浏览器</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2365.46" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="System.Text.Json" Version="8.0.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
+    <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Core\newtab.html" LogicalName="CustomizedBrowser.Core.newtab.html" />
+  </ItemGroup>
+
+  <!-- 项目位于仓库根目录，需排除非项目源码目录，避免被 SDK 默认通配符纳入编译 -->
+  <ItemGroup>
+    <Compile Remove="原文件\**" />
+    <Page Remove="原文件\**" />
+    <ApplicationDefinition Remove="原文件\**" />
+    <Resource Remove="原文件\**" />
+    <None Remove="原文件\**" />
+    <Compile Remove="publish\**" />
+    <Page Remove="publish\**" />
+    <Resource Remove="publish\**" />
+    <None Remove="publish\**" />
+    <Compile Remove="scripts\**" />
+    <Page Remove="scripts\**" />
+    <Resource Remove="scripts\**" />
+    <None Remove="scripts\**" />
+  </ItemGroup>
+
+</Project>

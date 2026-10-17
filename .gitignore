@@ -1,0 +1,42 @@
+# ===== 文件路径：.gitignore =====
+# 说明：Customized Browser（v2）Git 忽略规则
+
+# ---- .NET / Visual Studio 构建产物 ----
+# bin/obj 为可重新生成的编译产物，且其中的 project.assets.json、
+# *.FileListAbsolute.txt、*.editorconfig 会写入本机绝对路径，切勿提交
+bin/
+obj/
+publish/
+publish.7z
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ---- 发布压缩包 ----
+*.7z
+*.rar
+*.zip
+
+# ---- 运行期导出文件与日志（可能含 Cookie、浏览记录等隐私数据）----
+*.cbx
+*.log
+域名列表_*.csv
+
+# ---- Trae IDE 工作区配置（仅本地保留，不上传）----
+.trae/
+
+# ---- 早期版本目录（已迁移删除，保留忽略规则以防残留）----
+原文件/
+v2/
+
+# ---- 操作系统 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- Python 缓存（scripts/*.py）----
+__pycache__/
+*.pyc
+*.pyo
