@@ -1,0 +1,38 @@
+# ===== 文件路径：原文件\.gitignore =====
+# 说明：Customized Browser v1（初版原型）Git 忽略规则
+
+# ---- Visual Studio / .NET 构建产物 ----
+[Bb]in/
+[Oo]bj/
+*.exe
+*.exe.config
+*.pdb
+*.dll
+*.resources
+*.cache
+*.rar
+*.zip
+*.7z
+
+# ---- Visual Studio 用户级配置 ----
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VisualState.xml
+
+# ---- 编译/测试临时文件 ----
+*.tmp
+*.log
+*.bak
+*~
+
+# ---- 操作系统 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- Python（preview.py 原型脚本）----
+__pycache__/
+*.pyc

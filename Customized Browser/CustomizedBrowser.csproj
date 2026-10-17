@@ -1,0 +1,19 @@
+<!-- 项目文件：CustomizedBrowser.csproj -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- 禁用自动生成AssemblyInfo，使用手动创建的 -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 安装WebView2 NuGet包 -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2365.46" />
+    <PackageReference Include="System.Text.Json" Version="10.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 添加对System.Management程序集的引用 -->
+    <Reference Include="System.Management" />
+  </ItemGroup>
+</Project>
