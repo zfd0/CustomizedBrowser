@@ -219,7 +219,12 @@ namespace CustomizedBrowser.Services
         /// 复制指定网站的 IndexedDB / WebStorage 存储目录（目标实例需处于停止状态）
         /// 目标中已有的同名目录会先被删除，保证复制结果为来源的完整数据
         /// </summary>
-        public List<string> CopyStorageForHosts(string sourceInstanceId, string targetInstanceId, IEnumerable<string> hosts)
+        /// <param name="exactHostOnly">
+        /// true 时只匹配主机名完全相同的来源目录；合并场景使用该模式，
+        /// 避免父域网站的复制步骤误把子域网站的目录覆盖成非归属来源的数据
+        /// </param>
+        public List<string> CopyStorageForHosts(
+            string sourceInstanceId, string targetInstanceId, IEnumerable<string> hosts, bool exactHostOnly = false)
         {
             var warnings = new List<string>();
             var hostList = NormalizeHosts(hosts);
@@ -233,7 +238,8 @@ namespace CustomizedBrowser.Services
 
             foreach (var folderName in OriginScopedStorageFolderNames)
             {
-                foreach (var dir in EnumerateMatchingStorageDirs(sourceProfile, folderName, hostList))
+                foreach (var dir in EnumerateMatchingStorageDirs(sourceProfile, folderName, hostList, exactHostOnly))
+               
                 {
                     string destDir = Path.Combine(targetProfile, folderName, Path.GetFileName(dir));
                     try
@@ -254,7 +260,11 @@ namespace CustomizedBrowser.Services
         /// <summary>
         /// 删除指定网站的 IndexedDB / WebStorage 存储目录（实例需处于停止状态）
         /// </summary>
-        public List<string> DeleteStorageForHosts(string instanceId, IEnumerable<string> hosts)
+        /// <param name="exactHostOnly">
+        /// true 时只匹配主机名完全相同的来源目录；合并场景使用该模式，
+        /// 避免清理父域网站时误删未被合并的子域网站数据
+        /// </param>
+        public List<string> DeleteStorageForHosts(string instanceId, IEnumerable<string> hosts, bool exactHostOnly = false)
         {
             var warnings = new List<string>();
             var hostList = NormalizeHosts(hosts);
@@ -267,7 +277,7 @@ namespace CustomizedBrowser.Services
 
             foreach (var folderName in OriginScopedStorageFolderNames)
             {
-                foreach (var dir in EnumerateMatchingStorageDirs(profilePath, folderName, hostList))
+                foreach (var dir in EnumerateMatchingStorageDirs(profilePath, folderName, hostList, exactHostOnly))
                 {
                     try
                     {
@@ -382,6 +392,44 @@ namespace CustomizedBrowser.Services
                 foreach (var origin in originList)
                 {
                     await NavigateAndClearLocalStorageAsync(host, origin, warnings);
+                }
+
+                return true;
+            });
+        }
+
+        /// <summary>
+        /// 在同一个隐藏会话中批量「先清空再写入」Local Storage
+        /// 清空与写入连续完成，避免两次打开浏览器进程导致清空结果未落盘、旧数据与新数据混合
+        /// </summary>
+        public async Task ReplaceLocalStorageBatchAsync(
+            string instanceId, IEnumerable<string> originsToClear,
+            IDictionary<string, Dictionary<string, string>> data, List<string> warnings)
+        {
+            var clearOrigins = NormalizeOrigins(originsToClear);
+            var writeData = data ?? new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+            var originList = new List<string>(clearOrigins);
+            foreach (var origin in writeData.Keys)
+            {
+                if (!originList.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                {
+                    originList.Add(origin);
+                }
+            }
+
+            if (originList.Count == 0)
+            {
+                return;
+            }
+
+            await WithHostAsync(instanceId, true, async host =>
+            {
+                foreach (var origin in originList)
+                {
+                    bool clear = clearOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
+                    writeData.TryGetValue(origin, out var values);
+                    await NavigateAndReplaceLocalStorageAsync(host, origin, clear, values, warnings);
                 }
 
                 return true;
@@ -598,9 +646,58 @@ namespace CustomizedBrowser.Services
         }
 
         /// <summary>
+        /// 导航到指定来源并「先清空再写入」其 Local Storage（单次导航内完成，保证覆盖语义）
+        /// </summary>
+        /// <param name="clear">是否需要先清空该来源的旧数据</param>
+        /// <param name="data">需要写入的键值对；为空时只清空不写入</param>
+        private static async Task NavigateAndReplaceLocalStorageAsync(
+            CookieHostWindow host, string origin, bool clear, Dictionary<string, string>? data, List<string> warnings)
+        {
+            var navigation = await NavigateForStorageAsync(host, origin);
+            if (navigation.Status != StorageNavigationStatus.Success)
+            {
+                warnings?.Add(navigation.Status == StorageNavigationStatus.Redirected
+                    ? $"{origin} 实际跳转到了 {navigation.ActualUrl}，未更新其 Local Storage 数据。"
+                    : $"无法访问 {origin}，未更新其 Local Storage 数据。");
+                return;
+            }
+
+            try
+            {
+                if (clear)
+                {
+                    string clearRaw = await host.Core!.ExecuteScriptAsync(LocalStorageClearScript);
+                    string? clearResult = JsonSerializer.Deserialize<string>(clearRaw);
+                    if (clearResult != "ok")
+                    {
+                        warnings?.Add($"{origin} 的 Local Storage 清空未完全成功（{clearResult}）。");
+                    }
+                }
+
+                if (data != null && data.Count > 0)
+                {
+                    string payload = JsonSerializer.Serialize(data);
+                    string script = LocalStorageWriteScriptTemplate.Replace("__DATA__", payload);
+                    string raw = await host.Core!.ExecuteScriptAsync(script);
+                    string? result = JsonSerializer.Deserialize<string>(raw);
+                    if (result != "ok")
+                    {
+                        warnings?.Add($"{origin} 的 Local Storage 写入未完全成功（{result}）。");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings?.Add($"更新 {origin} 的 Local Storage 失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 枚举某个存储子目录下匹配指定网站的子目录
         /// </summary>
-        private static List<string> EnumerateMatchingStorageDirs(string profilePath, string folderName, List<string> hosts)
+        /// <param name="exactHostOnly">true 时只匹配主机名完全相同的来源，false 时含父子域匹配</param>
+        private static List<string> EnumerateMatchingStorageDirs(
+            string profilePath, string folderName, List<string> hosts, bool exactHostOnly)
         {
             var result = new List<string>();
             string root = Path.Combine(profilePath, folderName);
@@ -619,7 +716,7 @@ namespace CustomizedBrowser.Services
                         continue;
                     }
 
-                    if (hosts.Any(h => HostMatches(origin, h)))
+                    if (IsOriginMatched(origin, hosts, exactHostOnly))
                     {
                         result.Add(dir);
                     }
@@ -631,6 +728,21 @@ namespace CustomizedBrowser.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 判断来源地址是否匹配网站列表
+        /// </summary>
+        /// <param name="exactHostOnly">true 时仅主机名完全相同才算匹配</param>
+        private static bool IsOriginMatched(string origin, List<string> hosts, bool exactHostOnly)
+        {
+            if (!exactHostOnly)
+            {
+                return hosts.Any(h => HostMatches(origin, h));
+            }
+
+            string originHost = GetHostName(origin);
+            return hosts.Any(h => string.Equals(originHost, GetHostName(h), StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

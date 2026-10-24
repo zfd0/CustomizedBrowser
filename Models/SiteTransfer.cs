@@ -135,9 +135,9 @@ namespace CustomizedBrowser.Models
         private SourceOption? _selectedOption;
 
         /// <summary>
-        /// 该网站数据类型显示文本
+        /// 该网站数据类型显示文本（Cookie 数为各来源合计，便于比较冲突网站的数据量）
         /// </summary>
-        public string DataText => $"Cookie {CookieCount} 条{(HasStorage ? "，含站点存储" : "")}";
+        public string DataText => $"Cookie 合计 {CookieCount} 条{(HasStorage ? "，含站点存储" : "")}";
     }
 
     /// <summary>

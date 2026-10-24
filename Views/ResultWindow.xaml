@@ -6,10 +6,10 @@
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
         Title="操作结果"
-        Height="520"
-        Width="680"
-        MinHeight="360"
-        MinWidth="520"
+        Width="600"
+        Height="380"
+        MinWidth="500"
+        MinHeight="300"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         ResizeMode="CanResizeWithGrip"
@@ -46,7 +46,8 @@
                      AcceptsReturn="True"
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
-                     MinHeight="140"
+                     MinHeight="100"
+                     MaxHeight="240"
                      Margin="0,6,0,0"/>
         </Expander>
 

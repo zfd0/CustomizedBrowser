@@ -38,14 +38,17 @@ namespace CustomizedBrowser.Services
         /// <summary>
         /// 复制指定网站的 IndexedDB / WebStorage 存储目录
         /// </summary>
+        /// <param name="exactHostOnly">是否只匹配主机名完全相同的来源（合并场景用于精确归属，避免父域网站覆盖子域网站的数据）</param>
         /// <returns>警告信息列表</returns>
-        List<string> CopyStorageForHosts(string sourceInstanceId, string targetInstanceId, IEnumerable<string> hosts);
+        List<string> CopyStorageForHosts(
+            string sourceInstanceId, string targetInstanceId, IEnumerable<string> hosts, bool exactHostOnly = false);
 
         /// <summary>
         /// 删除指定网站的 IndexedDB / WebStorage 存储目录
         /// </summary>
+        /// <param name="exactHostOnly">是否只匹配主机名完全相同的来源（合并场景用于精确归属，避免误删子域网站的数据）</param>
         /// <returns>警告信息列表</returns>
-        List<string> DeleteStorageForHosts(string instanceId, IEnumerable<string> hosts);
+        List<string> DeleteStorageForHosts(string instanceId, IEnumerable<string> hosts, bool exactHostOnly = false);
 
         /// <summary>
         /// 批量读取指定来源的 Local Storage 内容
@@ -64,6 +67,19 @@ namespace CustomizedBrowser.Services
         /// 批量清空指定来源的 Local Storage
         /// </summary>
         Task ClearLocalStorageBatchAsync(string instanceId, IEnumerable<string> origins, List<string> warnings);
+
+        /// <summary>
+        /// 在同一个隐藏会话中批量「先清空再写入」Local Storage
+        /// 合并在覆盖目标网站数据时使用：清空与写入必须连续完成，避免中间关闭浏览器进程导致
+        /// 清空结果尚未落盘、旧数据与新数据混合
+        /// </summary>
+        /// <param name="instanceId">目标实例 ID</param>
+        /// <param name="originsToClear">需要清空的来源地址（旧数据）</param>
+        /// <param name="data">需要写入的来源数据（来源地址 → 键值对）</param>
+        /// <param name="warnings">警告信息收集列表</param>
+        Task ReplaceLocalStorageBatchAsync(
+            string instanceId, IEnumerable<string> originsToClear,
+            IDictionary<string, Dictionary<string, string>> data, List<string> warnings);
 
         /// <summary>
         /// 判断 Cookie 域或来源主机是否属于指定网站（含父子域双向匹配）

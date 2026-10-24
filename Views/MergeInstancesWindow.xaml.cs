@@ -63,10 +63,13 @@ namespace CustomizedBrowser.Views
             }
 
             _targets.Clear();
+            // 新建目标的名称在加载时生成并保存，避免合并时再生成导致界面显示的名称与实际创建的名称不一致
+            string newInstanceId = _instanceService.GenerateUniqueInstanceId();
             _targets.Add(new MergeTargetOption
             {
+                InstanceId = newInstanceId,
                 IsNew = true,
-                Label = $"新建实例（{_instanceService.GenerateUniqueInstanceId()}）"
+                Label = $"新建实例（{newInstanceId}）"
             });
             foreach (var instance in instances)
             {
@@ -192,7 +195,10 @@ namespace CustomizedBrowser.Views
                 .Where(c => c.SelectedOption != null)
                 .ToDictionary(c => c.Host, c => c.SelectedOption!.InstanceId, StringComparer.OrdinalIgnoreCase);
 
-            string targetId = target.IsNew ? _instanceService.GenerateUniqueInstanceId() : target.InstanceId;
+            // 新建目标沿用界面上显示的名称；理论上不会为空，兜底再生成一个唯一名称
+            string targetId = string.IsNullOrWhiteSpace(target.InstanceId)
+                ? _instanceService.GenerateUniqueInstanceId()
+                : target.InstanceId;
             bool targetExists = !target.IsNew && _instanceService.InstanceExists(targetId);
 
             string confirmText = $"将把 {sources.Count} 个来源实例的网站数据合并到" +
@@ -209,6 +215,10 @@ namespace CustomizedBrowser.Views
             {
                 var result = await _transferService.MergeAsync(sources, hostWinners, targetId, targetExists);
                 SetBusy(false, string.Empty);
+
+                // 先让界面完成忙碌状态的重绘，再打开模态结果窗口，避免父窗口停留在旧画面
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.Render);
 
                 // 提示可能很多，使用可滚动结果窗口显示，避免 MessageBox 超出屏幕
                 ResultWindow.Show(

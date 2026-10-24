@@ -115,10 +115,7 @@ namespace CustomizedBrowser.Services
                 var localStorageData = await _siteData.ReadLocalStorageBatchAsync(
                     sourceInstanceId, candidateOrigins, result.Warnings);
 
-                // 2. 停止源实例，释放站点存储目录的文件占用（目录复制要求进程已退出）
-                await _instanceService.StopInstanceAsync(sourceInstanceId);
-
-                // 3. 创建新实例
+                // 2. 先创建新实例（只建立目录，不启动浏览器），失败时无需停止源实例
                 var created = await _instanceService.CreateInstanceAsync(
                     targetInstanceId, $"从 \"{sourceInstanceId}\" 提取的网站数据");
                 if (created == null)
@@ -126,6 +123,9 @@ namespace CustomizedBrowser.Services
                     result.Message = $"创建实例 \"{targetInstanceId}\" 失败。";
                     return result;
                 }
+
+                // 3. 停止源实例，释放站点存储目录的文件占用（目录复制要求进程已退出）
+                await _instanceService.StopInstanceAsync(sourceInstanceId);
 
                 // 4. 复制站点存储目录（必须在创建新实例的 WebView2 环境之前完成）
                 result.Warnings.AddRange(_siteData.CopyStorageForHosts(sourceInstanceId, targetInstanceId, hosts));
@@ -153,7 +153,10 @@ namespace CustomizedBrowser.Services
 
                 result.Success = true;
                 result.CookieCount = selectedCookies.Count;
-                result.StorageSiteCount = CountStorageSites(storageOrigins, localStorageData);
+                // 只统计所选网站中确实带有站点存储的，避免把源实例未选网站也算进来
+                result.StorageSiteCount = hosts.Count(h =>
+                    storageOrigins.Any(o => _siteData.IsHostMatch(o, h)) ||
+                    localStorageData.Keys.Any(o => _siteData.IsHostMatch(o, h)));
                 result.Message = $"已从 \"{sourceInstanceId}\" 提取 {hosts.Count} 个网站的登录状态到新实例 \"{targetInstanceId}\"。\n" +
                                  $"Cookie：{result.CookieCount} 条\n" +
                                  $"含站点存储的网站：{result.StorageSiteCount} 个\n" +
@@ -262,9 +265,8 @@ namespace CustomizedBrowser.Services
                 return result;
             }
 
-            if (!targetExists &&
-                (string.IsNullOrWhiteSpace(targetInstanceId) ||
-                 targetInstanceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0))
+            if (string.IsNullOrWhiteSpace(targetInstanceId) ||
+                targetInstanceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
                 result.Message = "目标实例名称无效。";
                 return result;
@@ -281,38 +283,16 @@ namespace CustomizedBrowser.Services
                         Cookies = await _siteData.ReadCookiesAsync(sourceId),
                         Origins = _siteData.GetStorageOrigins(sourceId)
                     };
-                    // Local Storage 需逐个站点访问读取，候选来源由该实例的网站列表推导
+                    // Local Storage 需逐个站点访问读取，候选来源由该实例的网站列表推导（只取主机名相同的来源）
                     snapshot.LocalStorage = await _siteData.ReadLocalStorageBatchAsync(
                         sourceId,
-                        GetLocalStorageCandidates(snapshot.Origins, CollectHosts(new[] { snapshot })),
+                        GetLocalStorageCandidates(snapshot.Origins, CollectHosts(new[] { snapshot }), true),
                         result.Warnings);
                     sourceData[sourceId] = snapshot;
                 }
 
-                // 目标实例的原有 Cookie 也需在停止前读取，用于后续按网站覆盖
-                var targetCookies = targetExists
-                    ? await _siteData.ReadCookiesAsync(targetInstanceId)
-                    : new List<CookieData>();
-
-                // 2. 停止所有涉及的实例，释放站点存储目录的文件占用
-                await _instanceService.StopInstanceAsync(targetInstanceId);
-                foreach (var sourceId in sources)
-                {
-                    await _instanceService.StopInstanceAsync(sourceId);
-                }
-
-                // 3. 确保目标实例存在
-                if (!_instanceService.InstanceExists(targetInstanceId))
-                {
-                    var created = await _instanceService.CreateInstanceAsync(targetInstanceId, "合并创建的实例");
-                    if (created == null)
-                    {
-                        result.Message = $"创建实例 \"{targetInstanceId}\" 失败。";
-                        return result;
-                    }
-                }
-
-                // 4. 统计所有网站及各自的归属来源（无冲突网站自动取第一个来源，冲突网站按用户选择）
+                // 2. 统计所有网站及各自的归属来源（无冲突网站自动取第一个来源，冲突网站按用户选择）
+                //    提前判空：没有可合并的数据时直接返回，避免无谓地停止来源实例或新建空目标实例
                 var allHosts = CollectHosts(sourceData.Values);
                 var winners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var host in allHosts)
@@ -341,30 +321,85 @@ namespace CustomizedBrowser.Services
                     return result;
                 }
 
-                // 5. 站点存储目录：先清空目标中相关网站的数据，再按归属来源复制（必须在创建目标环境之前）
-                result.Warnings.AddRange(_siteData.DeleteStorageForHosts(targetInstanceId, mergeHosts));
+                var mergeHostSet = new HashSet<string>(mergeHosts, StringComparer.OrdinalIgnoreCase);
+
+                // 3. 目标实例不存在时先创建（创建只建立目录，不会启动浏览器），失败时无需停止来源
+                bool targetCreated = false;
+                if (!_instanceService.InstanceExists(targetInstanceId))
+                {
+                    var created = await _instanceService.CreateInstanceAsync(targetInstanceId, "合并创建的实例");
+                    if (created == null)
+                    {
+                        result.Message = $"创建实例 \"{targetInstanceId}\" 失败。";
+                        return result;
+                    }
+                    targetCreated = true;
+                }
+
+                // 4. 读取目标实例的原有数据（同样在停止前读取），用于按网站覆盖并清除旧登录状态
+                var targetCookies = new List<CookieData>();
+                var targetOrigins = new List<string>();
+                var targetOriginsToClear = new List<string>();
+                if (!targetCreated)
+                {
+                    targetCookies = await _siteData.ReadCookiesAsync(targetInstanceId);
+                    targetOrigins = _siteData.GetStorageOrigins(targetInstanceId);
+
+                    // 只读取目标中与本次合并网站相关的 Local Storage（避免访问无关站点）
+                    var targetHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var cookie in targetCookies)
+                    {
+                        AddHostIfMerged(targetHosts, mergeHostSet, _siteData.GetHost(cookie.Domain));
+                    }
+                    foreach (var origin in targetOrigins)
+                    {
+                        AddHostIfMerged(targetHosts, mergeHostSet, _siteData.GetHost(origin));
+                    }
+
+                    var targetCandidates = GetLocalStorageCandidates(
+                        targetOrigins.Where(o => mergeHostSet.Contains(_siteData.GetHost(o))),
+                        targetHosts,
+                        true);
+                    var targetLocalStorage = await _siteData.ReadLocalStorageBatchAsync(
+                        targetInstanceId, targetCandidates, result.Warnings);
+                    targetOriginsToClear = targetLocalStorage.Keys
+                        .Where(o => mergeHostSet.Contains(_siteData.GetHost(o)))
+                        .ToList();
+                }
+
+                // 5. 停止所有涉及的实例，释放站点存储目录的文件占用
+                await _instanceService.StopInstanceAsync(targetInstanceId);
+                foreach (var sourceId in sources)
+                {
+                    await _instanceService.StopInstanceAsync(sourceId);
+                }
+
+                // 6. 站点存储目录：先按网站精确清空目标旧目录，再按归属来源复制（必须在创建目标环境之前）
+                //    精确匹配可避免父域网站（如 deepseek.com）的步骤覆盖或删除子域网站（如 chat.deepseek.com）的数据
+                result.Warnings.AddRange(_siteData.DeleteStorageForHosts(targetInstanceId, mergeHosts, true));
 
                 foreach (var group in winners.GroupBy(p => p.Value))
                 {
                     result.Warnings.AddRange(_siteData.CopyStorageForHosts(
-                        group.Key, targetInstanceId, group.Select(p => p.Key).ToList()));
+                        group.Key, targetInstanceId, group.Select(p => p.Key).ToList(), true));
                 }
 
-                // 6. Cookie：先删除目标中相关网站的旧 Cookie，再写入归属来源的 Cookie
-                var winnerCookies = new List<CookieData>();
+                // 7. Cookie：每个 Cookie 按自身域名归属网站，只取该网站归属来源的 Cookie，
+                //    避免父域 Cookie（如 .deepseek.com）被多个网站分组重复收集、去重时随机保留
+                var cookiesToWrite = new List<CookieData>();
                 foreach (var host in mergeHosts)
                 {
-                    winnerCookies.AddRange(sourceData[winners[host]].Cookies
-                        .Where(c => _siteData.IsHostMatch(c.Domain, host)));
+                    cookiesToWrite.AddRange(sourceData[winners[host]].Cookies
+                        .Where(c => string.Equals(_siteData.GetHost(c.Domain), host, StringComparison.OrdinalIgnoreCase)));
                 }
 
-                var cookiesToWrite = winnerCookies
+                cookiesToWrite = cookiesToWrite
                     .GroupBy(c => $"{c.Name}|{c.Domain}|{c.Path}", StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First())
                     .ToList();
 
                 var targetCookiesToDelete = targetCookies
-                    .Where(c => mergeHosts.Any(h => _siteData.IsHostMatch(c.Domain, h)))
+                    .Where(c => mergeHostSet.Contains(_siteData.GetHost(c.Domain)))
                     .ToList();
 
                 if (targetCookiesToDelete.Count > 0)
@@ -377,26 +412,41 @@ namespace CustomizedBrowser.Services
                     await _siteData.WriteCookiesAsync(targetInstanceId, cookiesToWrite);
                 }
 
-                // 7. Local Storage：先清空目标中将要覆盖的来源，再写入归属来源的数据
+                // 8. Local Storage：只取归属来源的数据，并在同一个隐藏会话中「先清空再写入」
+                //    清空范围同时包含目标实例中已有数据的来源，避免归属来源没有数据时残留目标旧登录状态
                 var localStorageToWrite = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var host in mergeHosts)
+                foreach (var sourceId in sources)
                 {
-                    var snapshot = sourceData[winners[host]];
-                    foreach (var origin in snapshot.LocalStorage.Keys.Where(o => _siteData.IsHostMatch(o, host)))
+                    foreach (var pair in sourceData[sourceId].LocalStorage)
                     {
-                        localStorageToWrite[origin] = snapshot.LocalStorage[origin];
+                        string host = _siteData.GetHost(pair.Key);
+                        if (winners.TryGetValue(host, out var winner) &&
+                            string.Equals(winner, sourceId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            localStorageToWrite[pair.Key] = pair.Value;
+                        }
                     }
                 }
 
-                await _siteData.ClearLocalStorageBatchAsync(
-                    targetInstanceId, localStorageToWrite.Keys.ToList(), result.Warnings);
-                await _siteData.WriteLocalStorageBatchAsync(targetInstanceId, localStorageToWrite, result.Warnings);
+                var originsToClear = new List<string>(targetOriginsToClear);
+                foreach (var origin in localStorageToWrite.Keys)
+                {
+                    if (!originsToClear.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                    {
+                        originsToClear.Add(origin);
+                    }
+                }
+
+                await _siteData.ReplaceLocalStorageBatchAsync(
+                    targetInstanceId, originsToClear, localStorageToWrite, result.Warnings);
 
                 result.Success = true;
                 result.CookieCount = cookiesToWrite.Count;
                 result.StorageSiteCount = mergeHosts.Count(h =>
-                    sourceData[winners[h]].Origins.Any(o => _siteData.IsHostMatch(o, h)) ||
-                    sourceData[winners[h]].LocalStorage.Keys.Any(o => _siteData.IsHostMatch(o, h)));
+                    sourceData[winners[h]].Origins.Any(o =>
+                        string.Equals(_siteData.GetHost(o), h, StringComparison.OrdinalIgnoreCase)) ||
+                    sourceData[winners[h]].LocalStorage.Keys.Any(o =>
+                        string.Equals(_siteData.GetHost(o), h, StringComparison.OrdinalIgnoreCase)));
                 result.Message = $"已把 {sources.Count} 个实例的 {mergeHosts.Count} 个网站合并到 \"{targetInstanceId}\"。\n" +
                                  $"Cookie：{result.CookieCount} 条\n" +
                                  $"含站点存储的网站：{result.StorageSiteCount} 个\n" +
@@ -405,7 +455,7 @@ namespace CustomizedBrowser.Services
             }
             catch (Exception ex)
             {
-                result.Message = $"合并失败：{ex.Message}";
+                result.Message = $"合并失败：{ex.Message}\n目标实例可能只写入了部分数据，请检查后再使用或重试。";
                 return result;
             }
         }
@@ -462,12 +512,25 @@ namespace CustomizedBrowser.Services
         }
 
         /// <summary>
-        /// 判断来源快照中是否包含指定网站的数据
+        /// 仅当主机属于本次合并网站时加入目标集合
+        /// </summary>
+        private static void AddHostIfMerged(HashSet<string> target, HashSet<string> mergeHosts, string host)
+        {
+            if (host.Length > 0 && mergeHosts.Contains(host))
+            {
+                target.Add(host);
+            }
+        }
+
+        /// <summary>
+        /// 判断来源快照中是否包含指定网站的数据（按主机名精确匹配，与合并时的数据归属规则保持一致）
         /// </summary>
         private bool SnapshotContains(SourceSnapshot snapshot, string host)
         {
-            return snapshot.Cookies.Any(c => _siteData.IsHostMatch(c.Domain, host)) ||
-                   snapshot.Origins.Any(o => _siteData.IsHostMatch(o, host));
+            return snapshot.Cookies.Any(c =>
+                       string.Equals(_siteData.GetHost(c.Domain), host, StringComparison.OrdinalIgnoreCase)) ||
+                   snapshot.Origins.Any(o =>
+                       string.Equals(_siteData.GetHost(o), host, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -476,14 +539,18 @@ namespace CustomizedBrowser.Services
         /// </summary>
         /// <param name="storageOrigins">实例中已知的站点存储来源</param>
         /// <param name="hosts">要处理的网站主机名列表</param>
-        private List<string> GetLocalStorageCandidates(IEnumerable<string> storageOrigins, IEnumerable<string> hosts)
+        /// <param name="exactHostOnly">true 时已知来源也按主机名精确匹配（合并场景使用）</param>
+        private List<string> GetLocalStorageCandidates(
+            IEnumerable<string> storageOrigins, IEnumerable<string> hosts, bool exactHostOnly = false)
         {
             var originList = storageOrigins?.ToList() ?? new List<string>();
             var result = new List<string>();
 
             foreach (var host in hosts)
             {
-                foreach (var origin in originList.Where(o => _siteData.IsHostMatch(o, host)))
+                foreach (var origin in originList.Where(o => exactHostOnly
+                    ? string.Equals(_siteData.GetHost(o), host, StringComparison.OrdinalIgnoreCase)
+                    : _siteData.IsHostMatch(o, host)))
                 {
                     AddCandidate(result, origin);
                 }
@@ -504,27 +571,6 @@ namespace CustomizedBrowser.Services
             {
                 result.Add(origin);
             }
-        }
-
-        /// <summary>
-        /// 统计含站点存储的网站数量（含仅有 Local Storage 数据的网站）
-        /// </summary>
-        private int CountStorageSites(
-            IEnumerable<string> storageOrigins, IDictionary<string, Dictionary<string, string>> localStorageData)
-        {
-            var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var origin in storageOrigins)
-            {
-                hosts.Add(_siteData.GetHost(origin));
-            }
-
-            foreach (var origin in localStorageData.Keys)
-            {
-                hosts.Add(_siteData.GetHost(origin));
-            }
-
-            hosts.Remove(string.Empty);
-            return hosts.Count;
         }
 
         /// <summary>

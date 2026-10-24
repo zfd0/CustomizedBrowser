@@ -156,6 +156,10 @@ namespace CustomizedBrowser.Views
                     _sourceInstanceId, hosts, targetId, removeFromSource);
                 SetBusy(false, string.Empty);
 
+                // 先让界面完成忙碌状态的重绘，再打开模态结果窗口，避免父窗口停留在旧画面
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.Render);
+
                 // 提示可能很多，使用可滚动结果窗口显示，避免 MessageBox 超出屏幕
                 ResultWindow.Show(
                     this,
