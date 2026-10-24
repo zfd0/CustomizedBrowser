@@ -1,10 +1,12 @@
 // CustomizedBrowser\Views\InstanceManagerWindow.xaml.cs
 using CustomizedBrowser.Models;
+using CustomizedBrowser.Services;
 using CustomizedBrowser.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +31,7 @@ namespace CustomizedBrowser.Views
 
         private readonly InstanceManagerViewModel _viewModel;
         private readonly IServiceProvider _serviceProvider;
+        private readonly IInstanceService _instanceService;
 
         /// <summary>
         /// 是否正在框选
@@ -55,11 +58,13 @@ namespace CustomizedBrowser.Views
         /// </summary>
         private bool _suppressSelectionSync;
 
-        public InstanceManagerWindow(InstanceManagerViewModel viewModel, IServiceProvider serviceProvider)
+        public InstanceManagerWindow(
+            InstanceManagerViewModel viewModel, IServiceProvider serviceProvider, IInstanceService instanceService)
         {
             InitializeComponent();
             _viewModel = viewModel;
             _serviceProvider = serviceProvider;
+            _instanceService = instanceService;
             DataContext = viewModel;
 
             // 框选与右键菜单相关的鼠标事件在代码中订阅，便于统一维护
@@ -316,6 +321,113 @@ namespace CustomizedBrowser.Views
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 重命名实例按钮（工具栏按钮与右键菜单共用）
+        /// 实例 ID 同时是数据目录名，重命名会先停止实例再移动数据目录
+        /// </summary>
+        private async void RenameInstanceButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetSingleSelectedInstance(out var instance))
+            {
+                return;
+            }
+
+            string? input = InputWindow.Show(this, "重命名实例", "新的实例名称：", instance.InstanceId);
+            if (input == null)
+            {
+                return;
+            }
+
+            string newName = input.Trim();
+            if (string.Equals(newName, instance.InstanceId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(newName) || newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                MessageBox.Show("实例名称不能为空，且不能包含 \\ / : * ? \" < > | 等字符。", "重命名实例",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (_instanceService.InstanceExists(newName))
+            {
+                MessageBox.Show($"实例 \"{newName}\" 已存在，请换一个名称。", "重命名实例",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (instance.Status != InstanceStatus.Stopped &&
+                MessageBox.Show($"实例 \"{instance.InstanceId}\" 正在运行，重命名会先停止它，是否继续？",
+                    "重命名实例", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            bool success = await _instanceService.RenameInstanceAsync(instance.InstanceId, newName);
+            if (!success)
+            {
+                MessageBox.Show("重命名失败。请确认实例已完全关闭后重试。", "重命名实例",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // 刷新列表并保持选中重命名后的实例
+            _viewModel.RefreshInstances(newName);
+        }
+
+        /// <summary>
+        /// 修改描述按钮（工具栏按钮与右键菜单共用）
+        /// 描述保存在实例备注文件中，不影响实例数据
+        /// </summary>
+        private void EditNoteButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetSingleSelectedInstance(out var instance))
+            {
+                return;
+            }
+
+            string? input = InputWindow.Show(
+                this, "修改描述", "实例描述（可留空）：", instance.Note, multiline: true);
+            if (input == null)
+            {
+                return;
+            }
+
+            _instanceService.UpdateInstanceNote(instance.InstanceId, input.Trim());
+            _viewModel.RefreshInstances(instance.InstanceId);
+        }
+
+        /// <summary>
+        /// 获取唯一选中的实例（重命名、修改描述等操作只允许针对单个实例）
+        /// </summary>
+        private bool TryGetSingleSelectedInstance(out InstanceInfo instance)
+        {
+            instance = null!;
+
+            if (_viewModel.SelectedInstances.Count > 1)
+            {
+                MessageBox.Show("该操作只能针对单个实例，请只选择一个实例。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            var target = _viewModel.SelectedInstances.Count == 1
+                ? _viewModel.SelectedInstances[0]
+                : _viewModel.SelectedInstance;
+
+            if (target == null)
+            {
+                MessageBox.Show("请先选择一个实例。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            instance = target;
+            return true;
         }
 
         /// <summary>

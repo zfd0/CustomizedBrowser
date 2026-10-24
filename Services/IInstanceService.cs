@@ -48,6 +48,11 @@ namespace CustomizedBrowser.Services
         bool UpdateInstanceNote(string instanceId, string note);
 
         /// <summary>
+        /// 重命名实例（同步重命名数据目录与备注记录，运行中的实例会先被停止）
+        /// </summary>
+        Task<bool> RenameInstanceAsync(string oldInstanceId, string newInstanceId);
+
+        /// <summary>
         /// 获取实例备注
         /// </summary>
         string GetInstanceNote(string instanceId);

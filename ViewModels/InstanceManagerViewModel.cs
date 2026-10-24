@@ -65,9 +65,19 @@ namespace CustomizedBrowser.ViewModels
         /// <summary>
         /// 刷新实例列表（供对话框完成提取/合并等操作后调用）
         /// </summary>
-        public void RefreshInstances()
+        /// <param name="selectInstanceId">刷新后需要选中的实例 ID（可为空）</param>
+        public void RefreshInstances(string? selectInstanceId = null)
         {
             LoadInstances();
+
+            if (!string.IsNullOrEmpty(selectInstanceId))
+            {
+                var target = Instances.FirstOrDefault(i => i.InstanceId == selectInstanceId);
+                if (target != null)
+                {
+                    SelectedInstance = target;
+                }
+            }
         }
 
         /// <summary>

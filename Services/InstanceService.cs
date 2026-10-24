@@ -279,6 +279,65 @@ namespace CustomizedBrowser.Services
         }
 
         /// <summary>
+        /// 重命名实例
+        /// 实例 ID 同时是数据目录名，因此重命名本质是移动实例数据目录，并同步备注记录；
+        /// 运行中的实例会先被停止，避免 WebView2 进程占用目录导致移动失败
+        /// </summary>
+        public async Task<bool> RenameInstanceAsync(string oldInstanceId, string newInstanceId)
+        {
+            if (string.IsNullOrWhiteSpace(oldInstanceId) || string.IsNullOrWhiteSpace(newInstanceId))
+            {
+                return false;
+            }
+
+            oldInstanceId = oldInstanceId.Trim();
+            newInstanceId = newInstanceId.Trim();
+
+            if (string.Equals(oldInstanceId, newInstanceId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // 校验新名称合法性与是否已被占用
+            if (newInstanceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                newInstanceId == "." || newInstanceId == ".." ||
+                !InstanceExists(oldInstanceId) || InstanceExists(newInstanceId))
+            {
+                return false;
+            }
+
+            try
+            {
+                // 先停止实例并清理进程、环境缓存，释放数据目录占用
+                await StopInstanceAsync(oldInstanceId);
+                _openBrowserWindows.Remove(oldInstanceId);
+                Core.ProcessCleanupHelper.CleanupInstanceProcesses(oldInstanceId);
+                _environmentManager.RemoveEnvironment(oldInstanceId);
+
+                string oldPath = AppConstants.GetInstanceDataPath(oldInstanceId);
+                string newPath = AppConstants.GetInstanceDataPath(newInstanceId);
+                Directory.Move(oldPath, newPath);
+
+                // 备注以实例 ID 为键保存，需要同步迁移
+                string note = GetInstanceNote(oldInstanceId);
+                if (_instanceNotes.Remove(oldInstanceId))
+                {
+                    _instanceNotes[newInstanceId] = note;
+                    SaveInstanceNotes();
+                }
+
+                _instanceCache.Remove(oldInstanceId);
+                _instanceCache.Remove(newInstanceId);
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 获取实例备注
         /// </summary>
         public string GetInstanceNote(string instanceId)

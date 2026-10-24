@@ -299,13 +299,40 @@ namespace CustomizedBrowser.Services
 
             return WithReadHostAsync(instanceId, async host =>
             {
+                int skippedCount = 0;
+                var skippedExamples = new List<string>();
+
                 foreach (var origin in originList)
                 {
-                    var data = await NavigateAndReadLocalStorageAsync(host, origin, warnings);
-                    if (data != null && data.Count > 0)
+                    var read = await NavigateAndReadLocalStorageAsync(host, origin, warnings);
+
+                    if (read.Status == StorageNavigationStatus.Redirected)
                     {
-                        result[origin] = data;
+                        // 跨源跳转已由读取方法单独记录警告（含实际跳转地址），不再计入“无法访问”汇总
+                        continue;
                     }
+
+                    if (read.Status == StorageNavigationStatus.Failed)
+                    {
+                        // 汇总统计无法访问的来源，避免逐条提示把结果信息淹没
+                        skippedCount++;
+                        if (skippedExamples.Count < 5)
+                        {
+                            skippedExamples.Add(origin);
+                        }
+                        continue;
+                    }
+
+                    if (read.Data != null && read.Data.Count > 0)
+                    {
+                        result[origin] = read.Data;
+                    }
+                }
+
+                if (skippedCount > 0)
+                {
+                    string examples = string.Join("、", skippedExamples);
+                    warnings.Add($"{skippedCount} 个站点无法访问，已跳过其 Local Storage 数据（例如：{examples}）。");
                 }
 
                 return result;
@@ -428,38 +455,62 @@ namespace CustomizedBrowser.Services
         }
 
         /// <summary>
-        /// 导航到目标来源并校验未发生跨源跳转
+        /// 站点存储导航结果
+        /// 用于区分“导航失败”与“导航成功但发生跨源跳转”两种情况
         /// </summary>
-        /// <returns>是否已成功停留在目标来源</returns>
-        private static async Task<bool> NavigateForStorageAsync(CookieHostWindow host, string origin, List<string> warnings)
+        private enum StorageNavigationStatus
+        {
+            /// <summary>成功停留在目标来源</summary>
+            Success,
+
+            /// <summary>导航失败（超时、无法访问等）</summary>
+            Failed,
+
+            /// <summary>导航成功但跳转到了其他来源</summary>
+            Redirected
+        }
+
+        /// <summary>
+        /// 导航到目标来源并校验未发生跨源跳转
+        /// 导航失败与跨源跳转均不在此处写警告，由调用方按场景分别处理
+        /// </summary>
+        /// <param name="host">隐藏窗口宿主</param>
+        /// <param name="origin">目标来源地址</param>
+        /// <returns>导航状态；发生跨源跳转时同时返回实际停留的地址</returns>
+        private static async Task<(StorageNavigationStatus Status, string ActualUrl)> NavigateForStorageAsync(
+            CookieHostWindow host, string origin)
         {
             bool success = await host.NavigateAndWaitAsync(origin, NavigationTimeoutMs);
             if (!success)
             {
-                warnings?.Add($"无法访问 {origin}，已跳过其 Local Storage 数据。");
-                return false;
+                return (StorageNavigationStatus.Failed, string.Empty);
             }
 
             string current = host.Core?.Source ?? string.Empty;
-            if (!IsSameOrigin(current, origin))
-            {
-                warnings?.Add($"{origin} 实际跳转到了 {current}，已跳过其 Local Storage 数据。");
-                return false;
-            }
-
-            return true;
+            return IsSameOrigin(current, origin)
+                ? (StorageNavigationStatus.Success, current)
+                : (StorageNavigationStatus.Redirected, current);
         }
 
         /// <summary>
         /// 导航到指定来源并读取其 Local Storage 内容
         /// </summary>
-        /// <returns>键值对字典；无法读取时返回 null</returns>
-        private static async Task<Dictionary<string, string>?> NavigateAndReadLocalStorageAsync(
-            CookieHostWindow host, string origin, List<string> warnings)
+        /// <returns>导航状态与键值对字典；失败、跨源跳转或读取异常时 Data 为 null</returns>
+        private static async Task<(StorageNavigationStatus Status, Dictionary<string, string>? Data)>
+            NavigateAndReadLocalStorageAsync(CookieHostWindow host, string origin, List<string> warnings)
         {
-            if (!await NavigateForStorageAsync(host, origin, warnings))
+            var navigation = await NavigateForStorageAsync(host, origin);
+
+            if (navigation.Status == StorageNavigationStatus.Redirected)
             {
-                return null;
+                // 跨源跳转说明当前页面不再是目标网站，此时读取的会是错误站点的数据，需明确告知实际地址
+                warnings?.Add($"{origin} 实际跳转到了 {navigation.ActualUrl}，已跳过其 Local Storage 数据。");
+                return (StorageNavigationStatus.Redirected, null);
+            }
+
+            if (navigation.Status == StorageNavigationStatus.Failed)
+            {
+                return (StorageNavigationStatus.Failed, null);
             }
 
             try
@@ -470,16 +521,17 @@ namespace CustomizedBrowser.Services
                 string? json = JsonSerializer.Deserialize<string>(raw);
                 if (string.IsNullOrEmpty(json) || json == "{}")
                 {
-                    return new Dictionary<string, string>();
+                    return (StorageNavigationStatus.Success, new Dictionary<string, string>());
                 }
 
-                return JsonSerializer.Deserialize<Dictionary<string, string>>(json)
-                       ?? new Dictionary<string, string>();
+                return (StorageNavigationStatus.Success,
+                    JsonSerializer.Deserialize<Dictionary<string, string>>(json)
+                    ?? new Dictionary<string, string>());
             }
             catch (Exception ex)
             {
                 warnings?.Add($"读取 {origin} 的 Local Storage 失败：{ex.Message}");
-                return null;
+                return (StorageNavigationStatus.Success, null);
             }
         }
 
@@ -489,8 +541,12 @@ namespace CustomizedBrowser.Services
         private static async Task NavigateAndWriteLocalStorageAsync(
             CookieHostWindow host, string origin, Dictionary<string, string> data, List<string> warnings)
         {
-            if (!await NavigateForStorageAsync(host, origin, warnings))
+            var navigation = await NavigateForStorageAsync(host, origin);
+            if (navigation.Status != StorageNavigationStatus.Success)
             {
+                warnings?.Add(navigation.Status == StorageNavigationStatus.Redirected
+                    ? $"{origin} 实际跳转到了 {navigation.ActualUrl}，未写入其 Local Storage 数据。"
+                    : $"无法访问 {origin}，未写入其 Local Storage 数据。");
                 return;
             }
 
@@ -517,8 +573,12 @@ namespace CustomizedBrowser.Services
         private static async Task NavigateAndClearLocalStorageAsync(
             CookieHostWindow host, string origin, List<string> warnings)
         {
-            if (!await NavigateForStorageAsync(host, origin, warnings))
+            var navigation = await NavigateForStorageAsync(host, origin);
+            if (navigation.Status != StorageNavigationStatus.Success)
             {
+                warnings?.Add(navigation.Status == StorageNavigationStatus.Redirected
+                    ? $"{origin} 实际跳转到了 {navigation.ActualUrl}，未清空其 Local Storage 数据。"
+                    : $"无法访问 {origin}，未清空其 Local Storage 数据。");
                 return;
             }
 

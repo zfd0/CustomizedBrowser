@@ -37,6 +37,12 @@
             <Button Command="{Binding DeleteInstanceCommand}" ToolTip="删除实例">
                 <materialDesign:PackIcon Kind="Delete" Width="20" Height="20"/>
             </Button>
+            <Button Name="RenameInstanceButton" ToolTip="重命名实例" Click="RenameInstanceButton_Click">
+                <materialDesign:PackIcon Kind="RenameBox" Width="20" Height="20"/>
+            </Button>
+            <Button Name="EditNoteButton" ToolTip="修改描述" Click="EditNoteButton_Click">
+                <materialDesign:PackIcon Kind="CommentText" Width="20" Height="20"/>
+            </Button>
             <Separator/>
             <Button Command="{Binding ExportInstanceCommand}" ToolTip="导出实例（含登录状态）">
                 <materialDesign:PackIcon Kind="Export" Width="20" Height="20"/>
@@ -71,6 +77,8 @@
                         <MenuItem Header="打开实例" Command="{Binding OpenInstanceCommand}"/>
                         <MenuItem Header="停止实例" Command="{Binding StopInstanceCommand}"/>
                         <MenuItem Header="删除实例" Command="{Binding DeleteInstanceCommand}"/>
+                        <MenuItem Header="重命名实例" Click="RenameInstanceButton_Click"/>
+                        <MenuItem Header="修改描述" Click="EditNoteButton_Click"/>
                         <Separator/>
                         <MenuItem Header="导出实例（含登录状态）" Command="{Binding ExportInstanceCommand}"/>
                         <MenuItem Header="导入实例（含登录状态）" Command="{Binding ImportInstanceCommand}"/>

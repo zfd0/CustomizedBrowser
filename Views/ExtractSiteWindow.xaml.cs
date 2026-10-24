@@ -156,11 +156,13 @@ namespace CustomizedBrowser.Views
                     _sourceInstanceId, hosts, targetId, removeFromSource);
                 SetBusy(false, string.Empty);
 
-                MessageBox.Show(
-                    result.Message + result.WarningText,
+                // 提示可能很多，使用可滚动结果窗口显示，避免 MessageBox 超出屏幕
+                ResultWindow.Show(
+                    this,
+                    result.Success,
                     result.Success ? "提取成功" : "提取失败",
-                    MessageBoxButton.OK,
-                    result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
+                    result.Message,
+                    result.Warnings);
 
                 if (result.Success)
                 {
