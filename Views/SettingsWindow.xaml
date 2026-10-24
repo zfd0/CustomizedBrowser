@@ -362,9 +362,18 @@
                                                         </StackPanel>
 
                                                         <!-- 域名缓存详情（展开时显示） -->
-                                                        <ItemsControl ItemsSource="{Binding Domains}" 
-                                                                      Margin="28,4,0,0"
-                                                                      Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <StackPanel Margin="28,4,0,0"
+                                                                    Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <!-- 加载中提示 -->
+                                                            <TextBlock Text="正在读取域名信息..." 
+                                                                       Foreground="{DynamicResource MaterialDesignBodyLight}"
+                                                                       Visibility="{Binding IsLoadingDetails, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <!-- 空数据提示（读取失败或实例运行中数据库被占用时显示） -->
+                                                            <TextBlock Text="暂无域名信息（实例运行中时数据库可能被占用，可关闭实例后重新展开）。" 
+                                                                       TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource MaterialDesignBodyLight}"
+                                                                       Visibility="{Binding ShowEmptyDetailsHint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <ItemsControl ItemsSource="{Binding Domains}">
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
                                                                     <Border BorderBrush="{DynamicResource MaterialDesignDivider}" 
@@ -406,7 +415,8 @@
                                                                     </Border>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
+                                                            </ItemsControl>
+                                                        </StackPanel>
                                                     </StackPanel>
                                                 </Border>
                                             </DataTemplate>

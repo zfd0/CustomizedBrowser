@@ -120,7 +120,9 @@ namespace CustomizedBrowser.Services
                 {
                     DataSource = historyPath,
                     Mode = SqliteOpenMode.ReadOnly,
-                    Cache = SqliteCacheMode.Shared
+                    Cache = SqliteCacheMode.Shared,
+                    // 限制等待数据库锁的时间，避免实例运行中数据库被占用时长时间无响应
+                    DefaultTimeout = 3
                 }.ToString();
 
                 using var connection = new SqliteConnection(connectionString);
@@ -185,7 +187,9 @@ namespace CustomizedBrowser.Services
                 {
                     DataSource = cookiesPath,
                     Mode = SqliteOpenMode.ReadOnly,
-                    Cache = SqliteCacheMode.Shared
+                    Cache = SqliteCacheMode.Shared,
+                    // 限制等待数据库锁的时间，避免实例运行中数据库被占用时长时间无响应
+                    DefaultTimeout = 3
                 }.ToString();
 
                 using var connection = new SqliteConnection(connectionString);

@@ -34,7 +34,18 @@ namespace CustomizedBrowser.ViewModels
         private bool _isExpanded = false;
 
         [ObservableProperty]
+        private bool _isLoadingDetails = false;
+
+        [ObservableProperty]
+        private bool _showEmptyDetailsHint = false;
+
+        [ObservableProperty]
         private ObservableCollection<CacheDomainInfo> _domains = new();
+
+        /// <summary>
+        /// 是否已尝试加载过域名详情（避免重复读取数据库）
+        /// </summary>
+        public bool HasLoadedDetails { get; set; }
     }
 
     /// <summary>
@@ -134,23 +145,52 @@ namespace CustomizedBrowser.ViewModels
 
         /// <summary>
         /// 展开/折叠实例缓存详情命令
+        /// 切换动作必须保持同步立即生效；域名详情在后台单独加载，
+        /// 避免某个实例读取数据库较慢时阻塞其它实例的展开按钮
         /// </summary>
         [RelayCommand]
-        private async Task ToggleInstanceCacheDetail(InstanceCacheInfo? cacheInfo)
+        private void ToggleInstanceCacheDetail(InstanceCacheInfo? cacheInfo)
         {
             if (cacheInfo == null) return;
 
             cacheInfo.IsExpanded = !cacheInfo.IsExpanded;
 
-            if (cacheInfo.IsExpanded && cacheInfo.Domains.Count == 0)
+            // 已加载过且确实有数据时不重复读取；无数据时允许再次展开重试（例如实例关闭后数据库不再被占用）
+            if (cacheInfo.IsExpanded && (!cacheInfo.HasLoadedDetails || cacheInfo.Domains.Count == 0))
             {
-                // 加载域名缓存详情
+                _ = LoadInstanceCacheDetailsAsync(cacheInfo);
+            }
+        }
+
+        /// <summary>
+        /// 加载实例的域名缓存详情
+        /// 在后台读取并更新加载状态，异常时显示空数据提示而不是静默留白
+        /// </summary>
+        private async Task LoadInstanceCacheDetailsAsync(InstanceCacheInfo cacheInfo)
+        {
+            cacheInfo.IsLoadingDetails = true;
+            cacheInfo.ShowEmptyDetailsHint = false;
+
+            try
+            {
                 var domains = await _cacheService.GetCacheDomainsAsync(cacheInfo.InstanceId);
                 cacheInfo.Domains.Clear();
                 foreach (var domain in domains)
                 {
                     cacheInfo.Domains.Add(domain);
                 }
+
+                cacheInfo.HasLoadedDetails = true;
+                cacheInfo.ShowEmptyDetailsHint = cacheInfo.Domains.Count == 0;
+            }
+            catch (Exception)
+            {
+                cacheInfo.Domains.Clear();
+                cacheInfo.ShowEmptyDetailsHint = true;
+            }
+            finally
+            {
+                cacheInfo.IsLoadingDetails = false;
             }
         }
 
@@ -207,6 +247,8 @@ namespace CustomizedBrowser.ViewModels
                 cacheInfo.CacheSizeBytes = 0;
                 cacheInfo.CacheSizeText = "0 B";
                 cacheInfo.Domains.Clear();
+                cacheInfo.HasLoadedDetails = false;
+                cacheInfo.ShowEmptyDetailsHint = true;
 
                 // 更新总大小
                 TotalCacheSizeBytes = InstanceCacheInfos.Sum(c => c.CacheSizeBytes);
@@ -250,6 +292,9 @@ namespace CustomizedBrowser.ViewModels
                 {
                     cacheInfo.Domains.Add(d);
                 }
+
+                cacheInfo.HasLoadedDetails = true;
+                cacheInfo.ShowEmptyDetailsHint = cacheInfo.Domains.Count == 0;
 
                 // 更新总大小
                 TotalCacheSizeBytes = InstanceCacheInfos.Sum(c => c.CacheSizeBytes);
